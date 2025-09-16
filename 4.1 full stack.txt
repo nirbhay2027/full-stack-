@@ -1,0 +1,133 @@
+1. package.json
+{
+  "name": "product-crud",
+  "version": "1.0.0",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "nodemon app.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "helmet": "^7.0.0",
+    "mongoose": "^7.6.1",
+    "morgan": "^1.10.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
+
+2. .env
+PORT=5000
+MONGO_URI=mongodb://127.0.0.1:27017/productdb
+
+3. app.js
+require('dotenv').config();
+const express = require('express');
+const mongoose = require('mongoose');
+const morgan = require('morgan');
+const helmet = require('helmet');
+const cors = require('cors');
+
+const productRoutes = require('./routes/products');
+
+const app = express();
+
+app.use(helmet());
+app.use(cors());
+app.use(morgan('dev'));
+app.use(express.json());
+
+app.use('/api/products', productRoutes);
+
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(err.status || 500).json({ error: err.message || 'Internal Server Error' });
+});
+
+const PORT = process.env.PORT || 5000;
+
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => {
+    console.log('MongoDB Connected');
+    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+  })
+  .catch(err => console.error('Mongo Error:', err));
+
+4. Model
+models/Product.js
+const mongoose = require('mongoose');
+
+const ProductSchema = new mongoose.Schema({
+  name: { type: String, required: true, trim: true },
+  description: String,
+  price: { type: Number, required: true, min: 0 },
+  category: String,
+  stock: { type: Number, default: 0 },
+  createdAt: { type: Date, default: Date.now }
+});
+
+module.exports = mongoose.model('Product', ProductSchema);
+
+5. Controller
+controllers/productController.js
+const Product = require('../models/Product');
+
+exports.createProduct = async (req, res, next) => {
+  try {
+    const product = await Product.create(req.body);
+    res.status(201).json(product);
+  } catch (err) { next(err); }
+};
+
+exports.getProducts = async (req, res, next) => {
+  try {
+    const products = await Product.find();
+    res.json(products);
+  } catch (err) { next(err); }
+};
+
+exports.getProduct = async (req, res, next) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ message: 'Not Found' });
+    res.json(product);
+  } catch (err) { next(err); }
+};
+
+exports.updateProduct = async (req, res, next) => {
+  try {
+    const product = await Product.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true, runValidators: true }
+    );
+    if (!product) return res.status(404).json({ message: 'Not Found' });
+    res.json(product);
+  } catch (err) { next(err); }
+};
+
+exports.deleteProduct = async (req, res, next) => {
+  try {
+    const product = await Product.findByIdAndDelete(req.params.id);
+    if (!product) return res.status(404).json({ message: 'Not Found' });
+    res.json({ message: 'Deleted Successfully' });
+  } catch (err) { next(err); }
+};
+
+6. Routes
+routes/products.js
+const express = require('express');
+const router = express.Router();
+const ctrl = require('../controllers/productController');
+
+router.post('/', ctrl.createProduct);
+router.get('/', ctrl.getProducts);
+router.get('/:id', ctrl.getProduct);
+router.put('/:id', ctrl.updateProduct);
+router.delete('/:id', ctrl.deleteProduct);
+
+module.exports = router;
