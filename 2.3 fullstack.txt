@@ -1,0 +1,209 @@
+import React, { useRef, useState, useEffect } from "react";
+
+export default function SvgDrawingTool() {
+  const [tool, setTool] = useState("pen"); // pen | rect | line | ellipse
+  const [stroke, setStroke] = useState("#111827");
+  const [strokeWidth, setStrokeWidth] = useState(2);
+  const [elements, setElements] = useState([]); // saved shapes
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [temp, setTemp] = useState(null); // temporary shape being drawn
+  const svgRef = useRef();
+
+  useEffect(() => {
+    const prevent = (e) => e.preventDefault();
+    const svg = svgRef.current;
+    svg && svg.addEventListener("touchmove", prevent, { passive: false });
+    return () => svg && svg.removeEventListener("touchmove", prevent);
+  }, []);
+
+  const clientPoint = (e) => {
+    const svg = svgRef.current;
+    const rect = svg.getBoundingClientRect();
+    if (e.touches) {
+      const t = e.touches[0];
+      return { x: t.clientX - rect.left, y: t.clientY - rect.top };
+    }
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  };
+
+  const onDown = (e) => {
+    e.preventDefault();
+    const pt = clientPoint(e);
+    setIsDrawing(true);
+
+    if (tool === "pen") {
+      const path = `M ${pt.x} ${pt.y}`;
+      setTemp({ type: "path", d: path, stroke, strokeWidth });
+    } else if (tool === "rect") {
+      setTemp({
+        type: "rect",
+        x: pt.x,
+        y: pt.y,
+        w: 0,
+        h: 0,
+        stroke,
+        strokeWidth,
+      });
+    } else if (tool === "line") {
+      setTemp({
+        type: "line",
+        x1: pt.x,
+        y1: pt.y,
+        x2: pt.x,
+        y2: pt.y,
+        stroke,
+        strokeWidth,
+      });
+    } else if (tool === "ellipse") {
+      setTemp({
+        type: "ellipse",
+        cx: pt.x,
+        cy: pt.y,
+        rx: 0,
+        ry: 0,
+        stroke,
+        strokeWidth,
+      });
+    }
+  };
+
+  const onMove = (e) => {
+    if (!isDrawing || !temp) return;
+    e.preventDefault();
+    const pt = clientPoint(e);
+
+    if (temp.type === "path") {
+      const newD = temp.d + ` L ${pt.x} ${pt.y}`;
+      setTemp((t) => ({ ...t, d: newD }));
+    } else if (temp.type === "rect") {
+      const x = Math.min(temp.x, pt.x);
+      const y = Math.min(temp.y, pt.y);
+      const w = Math.abs(pt.x - temp.x);
+      const h = Math.abs(pt.y - temp.y);
+      setTemp((t) => ({ ...t, x, y, w, h }));
+    } else if (temp.type === "line") {
+      setTemp((t) => ({ ...t, x2: pt.x, y2: pt.y }));
+    } else if (temp.type === "ellipse") {
+      const rx = Math.abs(pt.x - temp.cx);
+      const ry = Math.abs(pt.y - temp.cy);
+      setTemp((t) => ({ ...t, rx, ry }));
+    }
+  };
+
+  const onUp = (e) => {
+    if (!isDrawing) return;
+    setIsDrawing(false);
+    if (temp) {
+      setElements((prev) => [...prev, temp]);
+      setTemp(null);
+    }
+  };
+
+  const undo = () => setElements((prev) => prev.slice(0, -1));
+  const clearAll = () => {
+    setElements([]);
+    setTemp(null);
+  };
+
+  const exportSVG = () => {
+    const svg = svgRef.current.cloneNode(true);
+    svg.removeAttribute("width");
+    svg.removeAttribute("height");
+    const serializer = new XMLSerializer();
+    const source = serializer.serializeToString(svg);
+    const blob = new Blob([source], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "drawing.svg";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="p-4" style={{ fontFamily: "system-ui, sans-serif" }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+        <div>
+          <label>Tool:</label>{" "}
+          <select value={tool} onChange={(e) => setTool(e.target.value)}>
+            <option value="pen">Pen</option>
+            <option value="rect">Rectangle</option>
+            <option value="line">Line</option>
+            <option value="ellipse">Ellipse</option>
+          </select>
+        </div>
+
+        <div>
+          <label>Color:</label>{" "}
+          <input type="color" value={stroke} onChange={(e) => setStroke(e.target.value)} />
+        </div>
+
+        <div>
+          <label>Width:</label>{" "}
+          <input
+            type="range"
+            min="1"
+            max="12"
+            value={strokeWidth}
+            onChange={(e) => setStrokeWidth(parseInt(e.target.value))}
+          />
+          <span style={{ marginLeft: 6 }}>{strokeWidth}px</span>
+        </div>
+
+        <button onClick={undo}>Undo</button>
+        <button onClick={clearAll}>Clear</button>
+        <button onClick={exportSVG}>Export SVG</button>
+      </div>
+
+      <div
+        style={{
+          border: "1px solid #e5e7eb",
+          borderRadius: 8,
+          width: "100%",
+          maxWidth: 900,
+          height: 600,
+          touchAction: "none",
+          background: "#fff",
+        }}
+      >
+        <svg
+          ref={svgRef}
+          viewBox={`0 0 900 600`}
+          width="900"
+          height="600"
+          onMouseDown={onDown}
+          onMouseMove={onMove}
+          onMouseUp={onUp}
+          onMouseLeave={onUp}
+          onTouchStart={onDown}
+          onTouchMove={onMove}
+          onTouchEnd={onUp}
+          style={{ display: "block", userSelect: "none" }}
+        >
+          <rect x="0" y="0" width="900" height="600" fill="transparent" />
+          {elements.map((el, i) => {
+            if (el.type === "path")
+              return <path key={i} d={el.d} fill="none" stroke={el.stroke} strokeWidth={el.strokeWidth} strokeLinecap="round" strokeLinejoin="round" />;
+            if (el.type === "rect")
+              return <rect key={i} x={el.x} y={el.y} width={el.w} height={el.h} fill="none" stroke={el.stroke} strokeWidth={el.strokeWidth} />;
+            if (el.type === "line")
+              return <line key={i} x1={el.x1} y1={el.y1} x2={el.x2} y2={el.y2} stroke={el.stroke} strokeWidth={el.strokeWidth} strokeLinecap="round" />;
+            if (el.type === "ellipse")
+              return <ellipse key={i} cx={el.cx} cy={el.cy} rx={el.rx} ry={el.ry} fill="none" stroke={el.stroke} strokeWidth={el.strokeWidth} />;
+            return null;
+          })}
+
+          {temp && (temp.type === "path" ? (
+            <path d={temp.d} fill="none" stroke={temp.stroke} strokeWidth={temp.strokeWidth} strokeLinecap="round" strokeLinejoin="round" opacity={0.9} />
+          ) : temp.type === "rect" ? (
+            <rect x={temp.x} y={temp.y} width={temp.w} height={temp.h} fill="none" stroke={temp.stroke} strokeWidth={temp.strokeWidth} opacity={0.9} />
+          ) : temp.type === "line" ? (
+            <line x1={temp.x1} y1={temp.y1} x2={temp.x2} y2={temp.y2} stroke={temp.stroke} strokeWidth={temp.strokeWidth} strokeLinecap="round" opacity={0.9} />
+          ) : temp.type === "ellipse" ? (
+            <ellipse cx={temp.cx} cy={temp.cy} rx={temp.rx} ry={temp.ry} fill="none" stroke={temp.stroke} strokeWidth={temp.strokeWidth} opacity={0.9} />
+          ) : null)}
+        </svg>
+      </div>
+    </div>
+  );
+}
