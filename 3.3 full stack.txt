@@ -1,0 +1,42 @@
+class Person {
+  constructor(name, age) {
+    this.name = name;
+    this.age = age;
+  }
+
+  introduce() {
+    return `Hi, I'm ${this.name}, ${this.age} years old.`;
+  }
+}
+
+class Student extends Person {
+  constructor(name, age, rollNo, course) {
+    super(name, age);
+    this.rollNo = rollNo;
+    this.course = course;
+  }
+
+  study() {
+    return `${this.name} is studying ${this.course}.`;
+  }
+}
+
+class Teacher extends Person {
+  constructor(name, age, subject, salary) {
+    super(name, age);
+    this.subject = subject;
+    this.salary = salary;
+  }
+
+  teach() {
+    return `${this.name} is teaching ${this.subject}.`;
+  }
+}
+
+const student1 = new Student("Nirbhay", 20, "CSE101", "Computer Science");
+const teacher1 = new Teacher("Dr. Sharma", 45, "Cloud Computing", 90000);
+
+console.log(student1.introduce());
+console.log(student1.study());
+console.log(teacher1.introduce());
+console.log(teacher1.teach());
