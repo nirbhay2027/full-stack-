@@ -1,0 +1,185 @@
+
+#include <iostream>
+#include <string>
+#include <vector>
+
+#include <bsoncxx/json.hpp>
+#include <bsoncxx/types.hpp>
+#include <bsoncxx/builder/stream/document.hpp>
+#include <bsoncxx/builder/stream/array.hpp>
+#include <bsoncxx/builder/stream/helpers.hpp>
+
+#include <mongocxx/client.hpp>
+#include <mongocxx/instance.hpp>
+#include <mongocxx/uri.hpp>
+#include <mongocxx/options/index.hpp>
+
+using bsoncxx::builder::stream::document;
+using bsoncxx::builder::stream::array;
+using bsoncxx::builder::stream::finalize;
+
+int main() {
+    mongocxx::instance inst{};
+    mongocxx::client conn{mongocxx::uri{"mongodb://localhost:27017"}};
+    auto db = conn["ecommerce_db"];
+    auto products = db["products"];
+
+    mongocxx::options::index index_opts;
+    auto idx_spec = document{} << "sku" << 1 << finalize;
+    try {
+        products.create_index(idx_spec.view());
+    } catch (const std::exception &e) {
+        std::cerr << "Index create error: " << e.what() << "\n";
+    }
+
+    document prod_builder{};
+    prod_builder
+        << "sku" << "PROD-1001"
+        << "title" << "Acme Running Shoes"
+        << "description" << "Lightweight running shoes with cushioning"
+        << "price" << 89.99
+        << "categories" << array{ "Footwear", "Running", "Men" }
+        << "variants" << array
+            << document{}
+                << "variant_id" << "V1"
+                << "color" << "Blue"
+                << "size" << 9
+                << "price" << 89.99
+            << finalize
+            << document{}
+                << "variant_id" << "V2"
+                << "color" << "Black"
+                << "size" << 10
+                << "price" << 94.99
+            << finalize
+        << finalize
+        << "inventory" << array
+            << document{}
+                << "warehouse_id" << "W1"
+                << "quantity" << 120
+            << finalize
+            << document{}
+                << "warehouse_id" << "W2"
+                << "quantity" << 30
+            << finalize
+        << finalize
+        << "specs" << document{}
+            << "material" << "mesh"
+            << "weight_g" << 280
+        << finalize
+        << "reviews" << array{};
+
+    try {
+        auto result = products.insert_one(prod_builder.view());
+        std::cout << "Inserted product with _id: " << result->inserted_id().get_oid().value.to_string() << "\n";
+    } catch (const std::exception &e) {
+        std::cerr << "Insert failed: " << e.what() << "\n";
+    }
+
+    auto find_doc = document{} << "sku" << "PROD-1001" << finalize;
+    auto maybe_prod = products.find_one(find_doc.view());
+    if (maybe_prod) {
+        std::cout << "Product found: " << bsoncxx::to_json(maybe_prod->view()) << "\n";
+    }
+
+    document add_review{};
+    add_review << "$push" << document{}
+                   << "reviews" << document{}
+                        << "author" << "Jane Doe"
+                        << "rating" << 5
+                        << "comment" << "Very comfortable and lightweight."
+                        << "created_at" << bsoncxx::types::b_date(std::chrono::system_clock::now())
+                   << finalize
+               << finalize;
+    try {
+        auto update_result = products.update_one(find_doc.view(), add_review.view());
+        std::cout << "Matched " << update_result->matched_count() << " document(s), modified " << update_result->modified_count() << "\n";
+    } catch (const std::exception &e) {
+        std::cerr << "Update error: " << e.what() << "\n";
+    }
+
+    document inventory_query{};
+    inventory_query << "sku" << "PROD-1001" << "inventory.warehouse_id" << "W1" << finalize;
+
+    document inventory_update{};
+    inventory_update << "$inc" << document{} << "inventory.$.quantity" << -1 << finalize << finalize;
+
+    try {
+        auto inv_res = products.update_one(inventory_query.view(), inventory_update.view());
+        if (inv_res) std::cout << "Inventory update - matched: " << inv_res->matched_count() << " modified: " << inv_res->modified_count() << "\n";
+    } catch (const std::exception &e) {
+        std::cerr << "Inventory update error: " << e.what() << "\n";
+    }
+
+    {
+        using bsoncxx::builder::stream::open_document;
+        using bsoncxx::builder::stream::close_document;
+        using bsoncxx::builder::stream::open_array;
+        using bsoncxx::builder::stream::close_array;
+
+        std::vector<bsoncxx::document::value> stages;
+
+        stages.push_back(
+            document{} << "$match" << open_document << "categories" << "Running" << close_document << finalize
+        );
+
+        stages.push_back(
+            document{} << "$unwind" << "$variants" << finalize
+        );
+
+        stages.push_back(
+            document{} << "$project" << open_document
+                << "sku" << 1
+                << "title" << 1
+                << "variant_id" << "$variants.variant_id"
+                << "variant_size" << "$variants.size"
+                << "variant_color" << "$variants.color"
+            << close_document << finalize
+        );
+
+        mongocxx::options::aggregate agg_opts;
+        try {
+            auto cursor = products.aggregate(stages, agg_opts);
+            std::cout << "Unwound variants for Running category:\n";
+            for (auto&& doc : cursor) {
+                std::cout << bsoncxx::to_json(doc) << "\n";
+            }
+        } catch (const std::exception &e) {
+            std::cerr << "Aggregation error: " << e.what() << "\n";
+        }
+    }
+
+    try {
+        document filter{};
+        filter << "sku" << "PROD-1001" << finalize;
+
+        auto update_doc = document{} << "$set" << document{} << "variants.$[v].price" << 79.99 << finalize << finalize;
+
+        mongocxx::options::update options{};
+        bsoncxx::builder::stream::array af;
+        af << document{} << "v.variant_id" << "V2" << finalize;
+        options.array_filters(af.view());
+
+        auto res = products.update_one(filter.view(), update_doc.view(), options);
+        if (res) std::cout << "Variant price update - matched: " << res->matched_count() << " modified: " << res->modified_count() << "\n";
+    } catch (const std::exception &e) {
+        std::cerr << "Variant price update error: " << e.what() << "\n";
+    }
+
+    try {
+        auto text_index = document{} << "title" << "text" << "description" << "text" << finalize;
+        products.create_index(text_index.view());
+    } catch (...) {}
+
+    auto text_query = document{} << "$text" << document{} << "$search" << "lightweight cushioning" << finalize << finalize;
+    try {
+        auto cursor = products.find(text_query.view());
+        std::cout << "Text search results:\n";
+        for (auto&& d : cursor) std::cout << bsoncxx::to_json(d) << "\n";
+    } catch (const std::exception &e) {
+        std::cerr << "Text search error: " << e.what() << "\n";
+    }
+
+    std::cout << "Done.\n";
+    return 0;
+}
