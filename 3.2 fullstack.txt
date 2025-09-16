@@ -1,0 +1,94 @@
+import React, { useState } from "react";
+
+export default function LibraryApp() {
+  const [books, setBooks] = useState([
+    { id: 1, title: "Clean Code", author: "Robert C. Martin" },
+    { id: 2, title: "Design Patterns", author: "Erich Gamma" },
+    { id: 3, title: "The Pragmatic Programmer", author: "Andrew Hunt" },
+  ]);
+
+  const [searchTerm, setSearchTerm] = useState("");
+  const [newBook, setNewBook] = useState({ title: "", author: "" });
+
+  const handleAddBook = () => {
+    if (!newBook.title || !newBook.author) return;
+    setBooks([
+      ...books,
+      { id: Date.now(), title: newBook.title, author: newBook.author },
+    ]);
+    setNewBook({ title: "", author: "" });
+  };
+
+  const handleRemoveBook = (id) => {
+    setBooks(books.filter((book) => book.id !== id));
+  };
+
+  const filteredBooks = books.filter(
+    (book) =>
+      book.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      book.author.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  return (
+    <div className="min-h-screen bg-gray-100 flex flex-col items-center p-6">
+      <h1 className="text-2xl font-bold mb-4">📚 Library Management</h1>
+
+      {/* Search */}
+      <input
+        type="text"
+        placeholder="Search by title or author..."
+        value={searchTerm}
+        onChange={(e) => setSearchTerm(e.target.value)}
+        className="border p-2 rounded w-80 mb-4"
+      />
+
+      {/* Add Book */}
+      <div className="flex gap-2 mb-4">
+        <input
+          type="text"
+          placeholder="Book Title"
+          value={newBook.title}
+          onChange={(e) => setNewBook({ ...newBook, title: e.target.value })}
+          className="border p-2 rounded"
+        />
+        <input
+          type="text"
+          placeholder="Author"
+          value={newBook.author}
+          onChange={(e) => setNewBook({ ...newBook, author: e.target.value })}
+          className="border p-2 rounded"
+        />
+        <button
+          onClick={handleAddBook}
+          className="bg-blue-500 text-white px-4 py-2 rounded"
+        >
+          Add
+        </button>
+      </div>
+
+      {/* Book List */}
+      <ul className="w-96 bg-white rounded shadow divide-y">
+        {filteredBooks.map((book) => (
+          <li
+            key={book.id}
+            className="flex justify-between items-center p-3"
+          >
+            <div>
+              <p className="font-semibold">{book.title}</p>
+              <p className="text-sm text-gray-600">{book.author}</p>
+            </div>
+            <button
+              onClick={() => handleRemoveBook(book.id)}
+              className="bg-red-500 text-white px-3 py-1 rounded"
+            >
+              Remove
+            </button>
+          </li>
+        ))}
+        {filteredBooks.length === 0 && (
+          <li className="p-3 text-gray-500">No books found</li>
+        )}
+      </ul>
+    </div>
+  );
+}
